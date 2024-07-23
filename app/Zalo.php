@@ -5,6 +5,7 @@ namespace App;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Illuminate\Support\Stringable;
+use Spatie\Url\Url;
 
 /**
  * @psalm-import-type FriendType from \App\Types\Zalo
@@ -13,14 +14,7 @@ final class Zalo
 {
     public const INITIALIZE_KEY = '3FC4F0D2AB50057BCE0D90D9187A22B1';
 
-    /**
-     * @param string $enk
-     */
-    private function __construct(string $enk) {
-        aes()->setKey($enk);
-    }
-
-    public static function initialize(): static
+    public function __construct()
     {
         $aes = aes();
         $aes->setKey(static::INITIALIZE_KEY);
@@ -38,40 +32,32 @@ final class Zalo
             ->upper()
         ;
 
-        $zcid_ext = Str::random(12);
+        $zcidExt = Str::random(12);
 
         $zaloParams->set('zcid', $zcid);
-        $zaloParams->set('zcid_ext', $zcid_ext);
+        $zaloParams->set('zcid_ext', $zcidExt);
 
-        static::zalo_setup($zcid, $zcid_ext);
+        self::zalo_setup($zcid, $zcidExt);
 
         $zaloParams->set(
             'params',
-            (string) str(json_encode(compact('imei')))
-                ->pipe($aes->encrypt(...))
-                ->toBase64()
+            $this->encodeAES([
+                'imei' => $imei,
+            ])
         );
 
-        browser()->request(
-            'GET',
-            sprintf(
-                'https://wpa.chat.zalo.me/api/login/getLoginInfo?%s',
-                static::zalo_build_query('getserverinfo', $zaloParams->all())
-            ),
+        $info = $this->get(
+            'https://wpa.chat.zalo.me/api/login/getLoginInfo',
+            $zaloParams->all(),
+            'getserverinfo',
+            false
         );
 
-        $user_data = json_decode(
-            str(data_get(browser_response()->toArray(), 'data'))
-                ->fromBase64()
-                ->pipe($aes->decrypt(...)),
-            true
-        );
-
-        $enk = (string) str(data_get($user_data, 'data.zpw_enk'))
+        $secret_key = (string) str(data_get($info, 'zpw_enk'))
             ->fromBase64()
         ;
 
-        return new static($enk);
+        aes()->setKey($secret_key);
     }
 
     /**
@@ -79,21 +65,47 @@ final class Zalo
      */
     public function getFriends(): array
     {
-        $uri = sprintf(
-            'https://tt-profile-wpa.chat.zalo.me/api/social/friend/getfriends?%s',
-            http_build_query([
+        return $this->get(
+            'https://tt-profile-wpa.chat.zalo.me/api/social/friend/getfriends',
+            [
                 'zpw_ver' => 636,
                 'zpw_type' => 30,
                 'params' => $this->encodeAES([
                     'count' => 20000,
                     'imei' => imei(),
                 ]),
-            ])
+            ]
+        );
+    }
+
+    /**
+     * @param string[] $parameters
+     *
+     * @return mixed[]
+     */
+    private function get(
+        string $uri,
+        array $parameters = [],
+        ?string $name = null,
+        bool $rawurldecode = true,
+    ): array {
+        if (null !== $name) {
+            ksort($parameters);
+
+            $parameters['signkey'] = str('zsecure')
+                ->append($name)
+                ->append(join($parameters))
+                ->pipe(md5(...))
+                ->toString()
+            ;
+        }
+
+        browser()->request(
+            'GET',
+            Url::fromString($uri)->withQueryParameters($parameters),
         );
 
-        browser()->request('GET', $uri);
-
-        return $this->decodeAES();
+        return $this->decodeAES($rawurldecode);
     }
 
     /**
@@ -110,11 +122,15 @@ final class Zalo
     /**
      * @return mixed[]
      */
-    private function decodeAES(): array
+    private function decodeAES(bool $rawurldecode = true): array
     {
-        $json = (string) str(data_get(browser_response()->toArray(), 'data'))
-            ->pipe(rawurldecode(...))
-            ->pipe(base64_decode(...))
+        $data = data_get(browser_response()->toArray(), 'data');
+
+        if ($rawurldecode) {
+            $data = rawurldecode($data);
+        }
+
+        $json = str($data)->fromBase64()
             ->pipe(aes()->decrypt(...))
         ;
 
@@ -146,17 +162,5 @@ final class Zalo
         ;
 
         aes()->setKey($key);
-    }
-
-    /**
-     * @param string[] $data
-     */
-    public static function zalo_build_query(string $action, array $data): string
-    {
-        ksort($data);
-
-        $data['signkey'] = md5('zsecure'.$action.join($data));
-
-        return http_build_query($data);
     }
 }

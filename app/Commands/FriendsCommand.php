@@ -5,8 +5,9 @@ namespace App\Commands;
 use App\Zalo;
 use Illuminate\Console\Scheduling\Schedule;
 use LaravelZero\Framework\Commands\Command;
-use function Laravel\Prompts\table;
+
 use function Laravel\Prompts\info;
+use function Laravel\Prompts\table;
 
 class FriendsCommand extends Command
 {
@@ -29,7 +30,7 @@ class FriendsCommand extends Command
      */
     public function handle(): int
     {
-        $zalo = Zalo::initialize();
+        $zalo = new Zalo();
 
         info('Your friends');
 

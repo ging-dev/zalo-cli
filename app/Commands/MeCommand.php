@@ -27,7 +27,7 @@ class MeCommand extends Command
      */
     public function handle(): int
     {
-        $zalo = Zalo::initialize();
+        $zalo = new Zalo();
 
         return static::SUCCESS;
     }

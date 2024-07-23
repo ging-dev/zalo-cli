@@ -28,7 +28,6 @@ namespace App\Types;
  *     isValid: int,
  *     userKey: string,
  *     accountStatus: int,
- *     oaInfo: null|null,
  *     user_mode: int,
  *     globalId: string,
  *     bizPkg: array{
